@@ -1,1 +1,6 @@
-
+yfinance
+pandas
+gspread
+gspread-dataframe
+oauth2client
+google-auth
