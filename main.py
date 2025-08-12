@@ -5,76 +5,55 @@ from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
 import os
 import json
-import datetime
+from datetime import datetime, timedelta
 
-# 🛡️ Load Google Credentials securely from GitHub Secrets
+# Load Google credentials
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS")
 if not GOOGLE_CREDENTIALS:
-    raise Exception("Google credentials not found in environment variables.")
+    raise ValueError("Missing GOOGLE_CREDENTIALS in environment variables")
+creds_dict = json.loads(GOOGLE_CREDENTIALS)
 
-credentials_dict = json.loads(GOOGLE_CREDENTIALS)
-creds = Credentials.from_service_account_info(
-    credentials_dict,
-    scopes=[
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-)
-client = gspread.authorize(creds)
-print(f"✅ Using service account: {creds.service_account_email}")
+# Authenticate with Google Sheets
+creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+gc = gspread.authorize(creds)
 
-# 📄 Google Sheet name
-SHEET_NAME = "StockAnalysisSheet"
-spreadsheet = client.open(SHEET_NAME)
-print(f"✅ Opened Google Sheet: {SHEET_NAME}")
+# Your Google Sheet URL
+SPREADSHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
 
-# 🏢 List of stock symbols (can be NSE or BSE)
-stock_symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+# Open the sheet
+spreadsheet = gc.open_by_url(SPREADSHEET_URL)
+worksheet = spreadsheet.sheet1
 
-# 📅 Dynamic Date Range (last 30 days)
-end_date = datetime.date.today()
-start_date = end_date - datetime.timedelta(days=30)
-start_date_str = start_date.strftime("%Y-%m-%d")
-end_date_str = end_date.strftime("%Y-%m-%d")
-print(f"📅 Fetching data from {start_date_str} to {end_date_str}")
+# Stock symbols
+symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 
-for symbol in stock_symbols:
-    print(f"\n📥 Fetching data for {symbol}...")
+# Date range (last 7 days)
+end_date = datetime.now()
+start_date = end_date - timedelta(days=7)
 
-    # 📈 Fetch stock data
-    df = yf.download(symbol, start=start_date_str, end=end_date_str, progress=False)
+# Fetch data
+all_data = []
+for symbol in symbols:
+    df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
+    df = df.reset_index()
 
-    if df.empty:
-        print(f"⚠️ No data found for {symbol} in this date range — skipping.")
-        continue
+    # Convert timestamp to local IST time
+    df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
 
-    df.reset_index(inplace=True)
+    df["Symbol"] = symbol
+    all_data.append(df)
 
-    # 📊 Indicators
-    df["Daily % Change (%)"] = df["Close"].pct_change() * 100
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-    df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+# Merge all data
+final_df = pd.concat(all_data)
 
-    delta = df["Close"].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
-    rs = avg_gain / avg_loss
-    df["RSI_14"] = 100 - (100 / (1 + rs))
+# Reorder columns
+final_df = final_df[["Symbol", "Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
-    print(f"📊 Data rows: {len(df)}")
+# Ensure datetime format with seconds
+final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 📄 Update or create worksheet
-    try:
-        worksheet = spreadsheet.worksheet(symbol)
-        print(f"✏️ Updating existing worksheet: {symbol}")
-    except gspread.exceptions.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=symbol, rows="1000", cols="20")
-        print(f"🆕 Created new worksheet: {symbol}")
+# Upload to Google Sheets
+worksheet.clear()
+set_with_dataframe(worksheet, final_df)
 
-    # ✍️ Write data
-    set_with_dataframe(worksheet, df)
-    print(f"✅ Sheet updated for {symbol}")
-
-print("\n🎯 All stocks processed successfully!")
+print("✅ Stock data updated with exact timestamps!")
