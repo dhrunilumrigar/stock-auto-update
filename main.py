@@ -7,22 +7,27 @@ import os
 import json
 from datetime import datetime, timedelta
 
-# Load Google credentials
+# Load Google credentials from GitHub Secrets
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS")
 if not GOOGLE_CREDENTIALS:
     raise ValueError("Missing GOOGLE_CREDENTIALS in environment variables")
 creds_dict = json.loads(GOOGLE_CREDENTIALS)
 
 # Authenticate with Google Sheets
-creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+creds = Credentials.from_service_account_info(
+    creds_dict,
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
 gc = gspread.authorize(creds)
 
-# Your Google Sheet URL
-SPREADSHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+# Load Spreadsheet URL from GitHub Secrets
+SPREADSHEET_URL = os.environ.get("SPREADSHEET_URL")
+if not SPREADSHEET_URL:
+    raise ValueError("Missing SPREADSHEET_URL in environment variables")
 
-# Open the sheet
+# Open the spreadsheet and specific worksheet
 spreadsheet = gc.open_by_url(SPREADSHEET_URL)
-worksheet = spreadsheet.sheet1
+worksheet = spreadsheet.worksheet("StockAnalysisSheet")  # Your sheet name
 
 # Stock symbols
 symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
@@ -31,29 +36,29 @@ symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 end_date = datetime.now()
 start_date = end_date - timedelta(days=7)
 
-# Fetch data
+# Fetch stock data
 all_data = []
 for symbol in symbols:
     df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
     df = df.reset_index()
 
-    # Convert timestamp to local IST time
+    # Convert timestamp to IST
     df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
 
     df["Symbol"] = symbol
     all_data.append(df)
 
-# Merge all data
+# Merge all stock data
 final_df = pd.concat(all_data)
 
 # Reorder columns
 final_df = final_df[["Symbol", "Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
-# Ensure datetime format with seconds
+# Format datetime with seconds
 final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 # Upload to Google Sheets
 worksheet.clear()
 set_with_dataframe(worksheet, final_df)
 
-print("✅ Stock data updated with exact timestamps!")
+print("✅ Stock data updated in StockAnalysisSheet with exact timestamps!")
