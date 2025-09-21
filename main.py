@@ -42,8 +42,8 @@ for symbol in symbols:
     df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
     df = df.reset_index()
 
-    # Convert timestamp to IST
-    df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
+   df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Kolkata')
+
 
     df["Symbol"] = symbol
     all_data.append(df)
