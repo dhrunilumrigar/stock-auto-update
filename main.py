@@ -29,10 +29,8 @@ if not SPREADSHEET_URL:
 spreadsheet = gc.open_by_url(SPREADSHEET_URL)
 worksheet = spreadsheet.worksheet("StockAnalysisSheet")  # Your sheet name
 
-# Get the list of symbols from the "Symbols" tab in the Google Sheet
-symbols_worksheet = spreadsheet.worksheet("Symbols")
-# Get all values from the first column, skipping the header row in A1
-symbols = symbols_worksheet.col_values(1)[1:]
+# Stock symbols (simple hardcoded list)
+symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 
 # Date range (last 7 days)
 end_date = datetime.now()
@@ -47,7 +45,7 @@ for symbol in symbols:
     df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
     df = df.reset_index()
 
-    # Convert timestamp to IST - THIS BLOCK IS NOW CORRECTLY INDENTED
+    # Convert timestamp to IST
     df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Kolkata')
     df["Symbol"] = symbol
     all_data.append(df)
