@@ -29,8 +29,10 @@ if not SPREADSHEET_URL:
 spreadsheet = gc.open_by_url(SPREADSHEET_URL)
 worksheet = spreadsheet.worksheet("StockAnalysisSheet")  # Your sheet name
 
-# Stock symbols
-symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+# Get the list of symbols from the "Symbols" tab in the Google Sheet
+symbols_worksheet = spreadsheet.worksheet("Symbols")
+# Get all values from the first column, skipping the header row in A1
+symbols = symbols_worksheet.col_values(1)[1:]
 
 # Date range (last 7 days)
 end_date = datetime.now()
@@ -39,26 +41,32 @@ start_date = end_date - timedelta(days=7)
 # Fetch stock data
 all_data = []
 for symbol in symbols:
+    # Skip any empty rows that might be in the Symbols sheet
+    if not symbol:
+        continue
     df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
     df = df.reset_index()
 
-   df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Kolkata')
-
-
+    # Convert timestamp to IST - THIS BLOCK IS NOW CORRECTLY INDENTED
+    df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Kolkata')
     df["Symbol"] = symbol
     all_data.append(df)
 
-# Merge all stock data
-final_df = pd.concat(all_data)
+# Check if any data was fetched
+if not all_data:
+    print("No data fetched for the given symbols. Exiting.")
+else:
+    # Merge all stock data
+    final_df = pd.concat(all_data)
 
-# Reorder columns
-final_df = final_df[["Symbol", "Datetime", "Open", "High", "Low", "Close", "Volume"]]
+    # Reorder columns
+    final_df = final_df[["Symbol", "Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
-# Format datetime with seconds
-final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    # Format datetime with seconds
+    final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-# Upload to Google Sheets
-worksheet.clear()
-set_with_dataframe(worksheet, final_df)
+    # Upload to Google Sheets
+    worksheet.clear()
+    set_with_dataframe(worksheet, final_df)
 
-print("✅ Stock data updated in StockAnalysisSheet with exact timestamps!")
+    print(f"✅ Stock data updated for symbols: {symbols}")
