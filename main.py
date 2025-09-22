@@ -39,10 +39,16 @@ start_date = end_date - timedelta(days=7)
 # Fetch stock data
 all_data = []
 for symbol in symbols:
-    # Skip any empty rows that might be in the Symbols sheet
     if not symbol:
         continue
-    df = yf.download(symbol, start=start_date, end=end_date, interval="1m")  # 1-minute interval
+    
+    df = yf.download(symbol, start=start_date, end=end_date, interval="1m")
+
+    # ADDED CHECK: Skip to the next symbol if no data is returned
+    if df.empty:
+        print(f"Warning: No data downloaded for {symbol}. Skipping.")
+        continue
+
     df = df.reset_index()
 
     # Convert timestamp to IST
@@ -52,7 +58,7 @@ for symbol in symbols:
 
 # Check if any data was fetched
 if not all_data:
-    print("No data fetched for the given symbols. Exiting.")
+    print("No data fetched for any symbols. Exiting.")
 else:
     # Merge all stock data
     final_df = pd.concat(all_data)
@@ -67,4 +73,4 @@ else:
     worksheet.clear()
     set_with_dataframe(worksheet, final_df)
 
-    print(f"✅ Stock data updated for symbols: {symbols}")
+    print(f"✅ Stock data updated for symbols: {final_df['Symbol'].unique().tolist()}")
