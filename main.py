@@ -36,41 +36,27 @@ symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 end_date = datetime.now()
 start_date = end_date - timedelta(days=7)
 
-# Fetch stock data
-all_data = []
-for symbol in symbols:
-    if not symbol:
-        continue
-    
-    df = yf.download(symbol, start=start_date, end=end_date, interval="1m")
-
-    # ADDED CHECK: Skip to the next symbol if no data is returned
-    if df.empty:
-        print(f"Warning: No data downloaded for {symbol}. Skipping.")
-        continue
-
-    df = df.reset_index()
-
-    # Convert timestamp to IST
-    df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Kolkata')
-    df["Symbol"] = symbol
-    all_data.append(df)
+# --- MODIFICATION: Download all stocks at once ---
+# yfinance will return a wide DataFrame with multi-level columns
+data = yf.download(symbols, start=start_date, end=end_date, interval="1m")
 
 # Check if any data was fetched
-if not all_data:
-    print("No data fetched for any symbols. Exiting.")
+if data.empty:
+    print("No data fetched for the given symbols. Exiting.")
 else:
-    # Merge all stock data
-    final_df = pd.concat(all_data)
+    # --- MODIFICATION: Flatten the multi-level column headers ---
+    # The original headers are like ('Open', 'RELIANCE.NS'). We want 'Open: RELIANCE.NS'
+    data.columns = [f"{level[0]}: {level[1]}" for level in data.columns]
+    
+    # Move the 'Datetime' index into a regular column
+    data.reset_index(inplace=True)
 
-    # Reorder columns
-    final_df = final_df[["Symbol", "Datetime", "Open", "High", "Low", "Close", "Volume"]]
+    # Convert timestamp to IST and format it
+    data['Datetime'] = pd.to_datetime(data['Datetime']).dt.tz_convert('Asia/Kolkata')
+    data['Datetime'] = data['Datetime'].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Format datetime with seconds
-    final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    # Upload to Google Sheets
+    # Upload the new wide dataframe to Google Sheets
     worksheet.clear()
-    set_with_dataframe(worksheet, final_df)
+    set_with_dataframe(worksheet, data)
 
-    print(f"✅ Stock data updated for symbols: {final_df['Symbol'].unique().tolist()}")
+    print(f"✅ Stock data updated in wide format for symbols: {symbols}")
