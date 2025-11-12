@@ -25,38 +25,45 @@ SPREADSHEET_URL = os.environ.get("SPREADSHEET_URL")
 if not SPREADSHEET_URL:
     raise ValueError("Missing SPREADSHEET_URL in environment variables")
 
-# Open the spreadsheet and specific worksheet
+# Open the spreadsheet and worksheet
 spreadsheet = gc.open_by_url(SPREADSHEET_URL)
-worksheet = spreadsheet.worksheet("StockAnalysisSheet")  # Your sheet name
+worksheet = spreadsheet.worksheet("StockAnalysisSheet")
 
-# Stock symbols (simple hardcoded list)
+# Stock symbols
 symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 
-# Date range (last 7 days)
+# Date range (recent data)
 end_date = datetime.now()
-start_date = end_date - timedelta(days=7)
+start_date = end_date - timedelta(days=5)
 
-# --- MODIFICATION: Download all stocks at once ---
-# yfinance will return a wide DataFrame with multi-level columns
-data = yf.download(symbols, start=start_date, end=end_date, interval="1m")
+# Fetch data
+data = yf.download(symbols, start=start_date, end=end_date, interval="5m", group_by="ticker")
 
-# Check if any data was fetched
-if data.empty:
-    print("No data fetched for the given symbols. Exiting.")
-else:
-    # --- MODIFICATION: Flatten the multi-level column headers ---
-    # The original headers are like ('Open', 'RELIANCE.NS'). We want 'Open: RELIANCE.NS'
-    data.columns = [f"{level[0]}: {level[1]}" for level in data.columns]
-    
-    # Move the 'Datetime' index into a regular column
-    data.reset_index(inplace=True)
+# Reformat for Google Sheets
+final_df = pd.DataFrame()
 
-    # Convert timestamp to IST and format it
-    data['Datetime'] = pd.to_datetime(data['Datetime']).dt.tz_convert('Asia/Kolkata')
-    data['Datetime'] = data['Datetime'].dt.strftime("%Y-%m-%d %H:%M:%S")
+for symbol in symbols:
+    if symbol in data:
+        temp = data[symbol].copy()
+        temp["Datetime"] = temp.index
+        temp["Symbol"] = symbol
+        temp = temp.reset_index(drop=True)
 
-    # Upload the new wide dataframe to Google Sheets
-    worksheet.clear()
-    set_with_dataframe(worksheet, data)
+        # Ensure Close is numeric
+        temp["Close"] = pd.to_numeric(temp["Close"], errors="coerce")
+        temp = temp.dropna(subset=["Close"])
 
-    print(f"✅ Stock data updated in wide format for symbols: {symbols}")
+        final_df = pd.concat([final_df, temp], ignore_index=True)
+
+# Convert timezone and format
+final_df["Datetime"] = pd.to_datetime(final_df["Datetime"]).dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+# Select relevant columns
+final_df = final_df[["Datetime", "Symbol", "Open", "High", "Low", "Close", "Volume"]]
+
+# Clear and update sheet
+worksheet.clear()
+set_with_dataframe(worksheet, final_df)
+
+print("✅ Google Sheet updated with corrected close prices and timestamps.")
