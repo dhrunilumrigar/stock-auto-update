@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime, timedelta
 
-# Load Google credentials from GitHub Secrets
+# Load Google credentials
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS")
 if not GOOGLE_CREDENTIALS:
     raise ValueError("Missing GOOGLE_CREDENTIALS in environment variables")
@@ -20,26 +20,25 @@ creds = Credentials.from_service_account_info(
 )
 gc = gspread.authorize(creds)
 
-# Load Spreadsheet URL from GitHub Secrets
+# Load Spreadsheet URL
 SPREADSHEET_URL = os.environ.get("SPREADSHEET_URL")
 if not SPREADSHEET_URL:
     raise ValueError("Missing SPREADSHEET_URL in environment variables")
 
-# Open the spreadsheet and worksheet
 spreadsheet = gc.open_by_url(SPREADSHEET_URL)
 worksheet = spreadsheet.worksheet("StockAnalysisSheet")
 
 # Stock symbols
 symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
 
-# Date range (recent data)
+# Date range (last 5 days)
 end_date = datetime.now()
 start_date = end_date - timedelta(days=5)
 
-# Fetch data
+# Download data
 data = yf.download(symbols, start=start_date, end=end_date, interval="5m", group_by="ticker")
 
-# Reformat for Google Sheets
+# Prepare clean DataFrame
 final_df = pd.DataFrame()
 
 for symbol in symbols:
@@ -47,23 +46,28 @@ for symbol in symbols:
         temp = data[symbol].copy()
         temp["Datetime"] = temp.index
         temp["Symbol"] = symbol
-        temp = temp.reset_index(drop=True)
+        temp.reset_index(drop=True, inplace=True)
 
         # Ensure Close is numeric
         temp["Close"] = pd.to_numeric(temp["Close"], errors="coerce")
-        temp = temp.dropna(subset=["Close"])
+        temp.dropna(subset=["Close"], inplace=True)
 
         final_df = pd.concat([final_df, temp], ignore_index=True)
 
-# Convert timezone and format
-final_df["Datetime"] = pd.to_datetime(final_df["Datetime"]).dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+# --- FIX: Handle timezone properly ---
+if pd.api.types.is_datetime64tz_dtype(final_df["Datetime"]):
+    final_df["Datetime"] = final_df["Datetime"].dt.tz_convert("Asia/Kolkata")
+else:
+    final_df["Datetime"] = pd.to_datetime(final_df["Datetime"]).dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+
+# Format timestamp for Google Sheets
 final_df["Datetime"] = final_df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-# Select relevant columns
+# Select and reorder columns
 final_df = final_df[["Datetime", "Symbol", "Open", "High", "Low", "Close", "Volume"]]
 
-# Clear and update sheet
+# Upload to Google Sheets
 worksheet.clear()
 set_with_dataframe(worksheet, final_df)
 
-print("✅ Google Sheet updated with corrected close prices and timestamps.")
+print("✅ Google Sheet updated with correct timestamps and Close values.")
